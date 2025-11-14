@@ -140,4 +140,126 @@ const options = {
 
 });
 
-export { registerUser , login};
+
+const logoutUser = asynchandler(async (req,res) => {
+    await User.findByIdAndUpdate(
+      req.user._id,
+      {
+        $set: {
+          refreshToken: "",
+        },
+
+      },
+      {
+        new: true,
+      },
+    );
+
+const options = {
+  httpOnly: true,
+  secure: true,
+};
+
+return res
+      .status(200)
+      .clearCookie("accessToken", options)
+      .clearCookie("refreshToken", options)
+      .json(new APIresponse(200, {}, "User logged out "));
+});
+
+
+
+const getCurrentUser  = asynchandler(async (req,res) => {
+  return res
+      .status(200)
+      .json(new APIresponse(200, req.user, "Current User fetched Successfully "));
+});
+
+//  Const getcurrentUSer = asynsHandler (async (req,res) => {})
+
+const verifyEmail = asynchandler(async (req,res) => {
+  const {VerificationToken} = req.params
+
+  if(!VerificationToken) {
+    throw new ApiError(400,"Email Verification Token is missing ")
+  }
+
+let hashedToken = crypto
+      .createHash("sha256")
+      .update(VerificationToken)
+      .digest("hex")
+
+
+      await User.findOne({
+        emailVerificationToken: hashedToken,
+        emailVerificationExpiry: {$gt: Date.now()},
+      });
+
+      if(!User)  {
+        throw new ApiError(400, "Token is invalid or expired");
+      }
+
+      User.emailVerificationToken = undefined;
+      User.emailVerificationExpiry = undefined;
+
+
+      User.isEmailVerified = true;
+      await User.save({validateBeforeSave: false} );
+
+      return res
+        .status(200)
+        .json(
+          new APIresponse(
+            200,
+            {
+              isEmailVerified: true
+            }
+          )
+        )
+});
+
+
+const resendEmailVerification = asynchandler (async (req, res) => {
+  const User = await User.findById(req.user?._id);
+
+  if(!User) {
+    throw new ApiError(404, "User does not exist")
+  }
+
+  if(email.isEmailVerified) {
+    throw new ApiError(409, "Email is already verified")
+  }
+
+  const {unHashedToken, hashedToken, tokenExpiry} = 
+        User.generateTemporaryToken();
+
+  User.emailVerificationToken = hashedToken;
+  User.emailVerificationExpiry = tokenExpiry;
+
+  await User.save({velidateBeforeSave: false });
+
+  await sendEmail({
+    email: User?.email,
+    subject: "Please verify your email",
+    mailgenContent: emailVerificationMailgenContent(
+      User.username,
+      `${req.protocol}: // ${req.get("host")}/api/v1/users/verify-email/${unHashedToken}`,
+    ),
+  });
+
+  return res
+      .status(200)
+      .json(
+        new APIresponse(
+          200,
+          {},
+          "Mail has been sent to your email ID"
+        )
+      )
+});
+
+
+
+
+
+export { registerUser , login, logoutUser, getCurrentUser, verifyEmail , resendEmailVerification  };
