@@ -12,12 +12,15 @@ export const verifyJWT = asynchandler(async(req,res,next) =>{
     }
 
     try {
-        jwt.verify(token,process.env.ACCESS_TOKEN_SECRET)
+        const decodedToken = jwt.verify(token,process.env.ACCESS_TOKEN_SECRET)
 
-        const user = await User.findById(decodedToken?._id).
+        const  user = await User.findById(decodedToken?._id).
         select("-password -refreshToken -emailVerificationToken -emailVerificationExpiry")
-
+        if(!user) throw new ApiError(404, "User not found!");
+        req.user = user;
+        next();
     } catch (error) {
-
+        console.log(error);
+        
     }
 })

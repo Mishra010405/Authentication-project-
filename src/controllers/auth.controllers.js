@@ -2,8 +2,9 @@ import { User } from "../models/user.models.js";
 import { APIresponse } from "../utils/api-response.js";
 import { ApiError } from "../utils/api-erroe.js";
 import { asynchandler } from "../utils/async-handler.js";
-import { emailVerificationMailgenContent, sendEmail } from "../utils/mail.js";
+import { emailVerificationContent, forgotPasswordContent, sendEmail } from "../utils/mail.js";
 import jwt from "jsonwebtoken";
+import { body } from "express-validator";
 
 const generateAccessAndRefreshToken = async (userId) => {
   const user = await User.findById(userId);
@@ -56,7 +57,7 @@ const registerUser = asynchandler(async (req, res) => {
   await sendEmail({
     email: user.email,
     subject: "Please verify your email",
-    mailgenContent: emailVerificationMailgenContent(
+    mailgenContent: emailVerificationContent(
       user.username,
       `${req.protocol}://${req.get("host")}/api/v1/users/verify-email/${unHashedToken}`
     ),
@@ -142,6 +143,8 @@ const options = {
 
 
 const logoutUser = asynchandler(async (req,res) => {
+  console.log(req.user._id);
+  
     await User.findByIdAndUpdate(
       req.user._id,
       {
@@ -220,28 +223,28 @@ let hashedToken = crypto
 
 
 const resendEmailVerification = asynchandler (async (req, res) => {
-  const User = await User.findById(req.user?._id);
+  const user = await User.findById(req.user?._id);
 
-  if(!User) {
+  if(!user) {
     throw new ApiError(404, "User does not exist")
   }
 
-  if(email.isEmailVerified) {
+  if(user.isEmailVerified) {
     throw new ApiError(409, "Email is already verified")
   }
 
   const {unHashedToken, hashedToken, tokenExpiry} = 
-        User.generateTemporaryToken();
+        user.generateTemporaryToken();
 
-  User.emailVerificationToken = hashedToken;
-  User.emailVerificationExpiry = tokenExpiry;
+  user.emailVerificationToken = hashedToken;
+  user.emailVerificationExpiry = tokenExpiry;
 
-  await User.save({velidateBeforeSave: false });
+  await user.save({velidateBeforeSave: false });
 
   await sendEmail({
     email: User?.email,
     subject: "Please verify your email",
-    mailgenContent: emailVerificationMailgenContent(
+    mailgenContent: emailVerificationContent(
       User.username,
       `${req.protocol}: // ${req.get("host")}/api/v1/users/verify-email/${unHashedToken}`,
     ),
@@ -311,6 +314,126 @@ const refreshAccessToken = asynchandler(async (req, res) => {
   }
 });
 
+
+const forgotPasswordRequest = asynchandler(async (req,res) => {
+  const {email} = req.body
+
+  const user = await User.findOne({email})
+
+  if(!user) {
+    throw new ApiError(401, "User does not exist", []);
+  }
+
+  const {
+    unHashedToken, hashedToken, tokenExpiry
+
+
+  } = user.generateTemporaryToken()
+
+  user.forgotPasswordToken = hashedToken
+  user.forgotPasswordExpiry = tokenExpiry
+
+  await user.save({validationBeforeSave: false})
+
+  await sendEmail({
+    email: user?.email,
+    subject: "Password reset request",
+    mailgenContent: forgotPasswordContent(
+      user.username,
+      `${process.env.FORGOT_PASSWORD_REDIRECT_URL}/${unHashedToken}`,
+    ),
+  });
+
+  return res
+      .status(200)
+      .json(
+        new APIresponse(
+          200,
+          {},
+          "Passwor reset mail has been sent on your email"
+        )
+      )
+});
+
+
+const resetForgotPassword = asynchandler(async (req,res) => {
+  const {resetToken} = req.params
+  const {newpassword} = req.body
+
+  let hashedToken = crypto
+      .createHash("sha256")
+      .update(resetToken)
+      .digest("hex")
+
+
+      const User = await User.findOne({
+        forgotPasswordToken: hashedToken,
+        forgotPasswordExpiry: {$gt: Date.now()}
+      })
+
+      if(!User) {
+        throw new ApiError(489, "Token is invalid or expired")
+      }
+
+      User.forgotPasswordExpiry = undefined
+      User.forgotPasswordToken = undefined
+
+      User.password = newpassword;
+      await User.save({velidateBeforeSave: false});
+
+      return res
+          .status(200)
+          .json(new APIresponse(200, {}, "password reset  successfully"));
+});
+
+
+const changePassword = asynchandler(async(req,res) => {
+  const {oldpassword, newpassword} = req.body
+  
+  const User = await User.findById(req.User?._id);
+
+  if(!isPasswordValid) {
+    throw new ApiError(400, "Invalid old Password")
+  }
+
+  User.password = newpassword
+  await User.save({validateBeforeSave: false})
+
+  return res
+      .status(200)
+      .json(
+        new APIresponse(
+          200,
+          {},
+          "Password Changed Successsfully "
+        )
+      );
+
+});
+
+
+const userChangePasswordValidator = () => {
+  return [
+    body("oldPassword").notEmpty().withMessage("Old Pasword is required"),
+    body("newPassword").notEmpty().withMessage("New password is required"),
+  ];
+};
+
+
+const userForgotPasswordValidator = () => {
+  return [
+    body("email")
+      .notEmpty()
+      .withMessage("Eamil is  required")
+      .isEmail()
+      .withMessage("Email is invalid"),
+  ];
+};
+
+const userResetForgotPasswordValidator = () => {
+  return [body("newPassword").notEmpty().withMessage("Password is required")];
+};
+
 export {
   registerUser,
   login,
@@ -319,4 +442,12 @@ export {
   verifyEmail,
   resendEmailVerification,
   refreshAccessToken,
+  forgotPasswordRequest,
+  changePassword,
+  resetForgotPassword,
+  userResetForgotPasswordValidator ,
+  userForgotPasswordValidator,
+  userChangePasswordValidator,
+  
+  
 };
