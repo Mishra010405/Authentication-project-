@@ -19,7 +19,7 @@ const generateAccessAndRefreshToken = async (userId) => {
     return { accessToken, refreshToken };
   } catch (error) {
     console.log(error);
-    throw new ApiError(400, "Something went wrong while generating tokens", error);
+    throw new ApiError(400, " Something went wrong while generating tokens", error);
   }
 };
 
