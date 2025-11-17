@@ -32,6 +32,7 @@ const registerUser = asynchandler(async (req, res) => {
     $or: [{ username }, { email }],
   });
 
+
   if (existedUser) {
     throw new ApiError(409, "User with email or username already exists");
   }
@@ -47,9 +48,9 @@ const registerUser = asynchandler(async (req, res) => {
 
   
   const { unHashedToken, hashedToken, tokenExpiry } = user.generateTemporaryToken();
-
+ 
   user.emailVerificationToken = hashedToken;
-  user.emailVerificationExpiry = tokenExpiry;
+  user.emailVerificationToken = tokenExpiry;
 
   await user.save({ validateBeforeSave: false });
 
@@ -237,7 +238,7 @@ const resendEmailVerification = asynchandler (async (req, res) => {
         user.generateTemporaryToken();
 
   user.emailVerificationToken = hashedToken;
-  user.emailVerificationExpiry = tokenExpiry;
+  user.emailVerificationToken = tokenExpiry;
 
   await user.save({velidateBeforeSave: false });
 
